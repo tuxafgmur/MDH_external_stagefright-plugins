@@ -18,21 +18,18 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "SoftFFmpegAudio"
 #include <utils/Log.h>
+
 #include <cutils/properties.h>
 
 #include "SoftFFmpegAudio.h"
 #include "FFmpegComponents.h"
 
 #include <media/stagefright/foundation/ADebug.h>
-#include <media/stagefright/foundation/hexdump.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/OMXCodec.h>
 
 #include <OMX_AudioExt.h>
 #include <OMX_IndexExt.h>
-
-#define DEBUG_PKT 0
-#define DEBUG_FRM 0
 
 namespace android {
 
@@ -75,15 +72,11 @@ SoftFFmpegAudio::SoftFFmpegAudio(
 
     setAudioClock(0);
 
-    ALOGD("SoftFFmpegAudio component: %s mCodingType: %d",
-            name, mCodingType);
-
     initPorts();
     CHECK_EQ(initDecoder(codecID), (status_t)OK);
 }
 
 SoftFFmpegAudio::~SoftFFmpegAudio() {
-    ALOGV("~SoftFFmpegAudio");
     deInitDecoder();
     if (mFFmpegAlreadyInited) {
         deInitFFmpeg();
@@ -656,13 +649,6 @@ OMX_ERRORTYPE SoftFFmpegAudio::internalSetParameter(
 
             adjustAudioParams();
 
-            ALOGD("set OMX_IndexParamAudioVorbis, "
-                    "nChannels=%u, nSampleRate=%u, nBitRate=%u, "
-                    "nMinBitRate=%u, nMaxBitRate=%u",
-                profile->nChannels, profile->nSampleRate,
-                profile->nBitRate, profile->nMinBitRate,
-                profile->nMaxBitRate);
-
             return OMX_ErrorNone;
         }
 
@@ -871,15 +857,6 @@ OMX_ERRORTYPE SoftFFmpegAudio::internalSetParameter(
 
             adjustAudioParams();
 
-            ALOGD("set OMX_IndexParamAudioFFmpeg, "
-                "eCodecId:%d(%s), nChannels:%u, nBitRate:%u, "
-                "nBitsPerSample:%u, nSampleRate:%u, "
-                "nBlockAlign:%u, eSampleFormat:%u(%s)",
-                profile->eCodecId, avcodec_get_name(mCtx->codec_id),
-                profile->nChannels, profile->nBitRate,
-                profile->nBitsPerSample, profile->nSampleRate,
-                profile->nBlockAlign, profile->eSampleFormat,
-                av_get_sample_fmt_name(mCtx->sample_fmt));
             return OMX_ErrorNone;
         }
 
@@ -922,13 +899,7 @@ int32_t SoftFFmpegAudio::handleExtradata() {
     BufferInfo *inInfo = *inQueue.begin();
     OMX_BUFFERHEADERTYPE *inHeader = inInfo->mHeader;
 
-    ALOGI("got extradata, ignore: %d, size: %u",
-            mIgnoreExtradata, inHeader->nFilledLen);
-    hexdump(inHeader->pBuffer + inHeader->nOffset, inHeader->nFilledLen);
-
-    if (mIgnoreExtradata) {
-        ALOGI("got extradata, size: %u, but ignore it", inHeader->nFilledLen);
-    } else {
+    if (!mIgnoreExtradata) {
         if (!mExtradataReady) {
             uint32_t ret = ERR_OK;
             if (mCtx->codec_id == AV_CODEC_ID_VORBIS) {
@@ -977,8 +948,6 @@ int32_t SoftFFmpegAudio::openDecoder() {
             }
             deinitVorbisHdr();
         }
-        ALOGI("extradata is ready, size: %d", mCtx->extradata_size);
-        hexdump(mCtx->extradata, mCtx->extradata_size);
         mExtradataReady = true;
     }
 
@@ -991,23 +960,12 @@ int32_t SoftFFmpegAudio::openDecoder() {
 
     setDefaultCtx(mCtx, mCtx->codec);
 
-    ALOGD("begin to open ffmpeg audio decoder(%s), mCtx sample_rate: %d, channels: %d",
-           avcodec_get_name(mCtx->codec_id),
-           mCtx->sample_rate, mCtx->channels);
-
     int err = avcodec_open2(mCtx, mCtx->codec, NULL);
     if (err < 0) {
         ALOGE("ffmpeg audio decoder failed to initialize.(%s)", av_err2str(err));
         return ERR_DECODER_OPEN_FAILED;
     }
     mCodecAlreadyOpened = true;
-
-    ALOGD("open ffmpeg audio decoder(%s) success, mCtx sample_rate: %d, "
-            "channels: %d, sample_fmt: %s, bits_per_coded_sample: %d, bits_per_raw_sample: %d",
-            avcodec_get_name(mCtx->codec_id),
-            mCtx->sample_rate, mCtx->channels,
-            av_get_sample_fmt_name(mCtx->sample_fmt),
-            mCtx->bits_per_coded_sample, mCtx->bits_per_raw_sample);
 
     mFrame = av_frame_alloc();
     if (!mFrame) {
@@ -1105,16 +1063,9 @@ int32_t SoftFFmpegAudio::decodeAudio() {
         mResampledDataSize = kOutputBufferSize;
         ret = ERR_OK;
     } else {
-#if DEBUG_PKT
-        ALOGV("ffmpeg audio decoder, consume pkt len: %d", len);
-#endif
         if (!gotFrm) {
-#if DEBUG_FRM
-            ALOGI("ffmpeg audio decoder failed to get frame.");
-#endif
             //stop sending empty packets if the decoder is finished
             if (is_flush && mCtx->codec->capabilities & CODEC_CAP_DELAY) {
-                ALOGI("ffmpeg audio decoder failed to get more frames when flush.");
                 ret = ERR_FLUSHED;
             } else {
                 ret = ERR_NO_FRM;
@@ -1202,17 +1153,6 @@ int32_t SoftFFmpegAudio::resampleAudio() {
                 mCtx->channels, channelLayout);
         av_get_channel_layout_string(tgt_layout_name, sizeof(tgt_layout_name),
                 mAudioTgtChannels, mAudioTgtChannelLayout);
-        ALOGI("Create sample rate converter for conversion "
-                "of %d Hz %s %d channels(%s) "
-                "to %d Hz %s %d channels(%s)!",
-                mFrame->sample_rate,
-                av_get_sample_fmt_name((enum AVSampleFormat)mFrame->format),
-                av_frame_get_channels(mFrame),
-                src_layout_name,
-                mAudioTgtFreq,
-                av_get_sample_fmt_name(mAudioTgtFmt),
-                mAudioTgtChannels,
-                tgt_layout_name);
 
         mAudioSrcChannelLayout = channelLayout;
         mAudioSrcChannels = av_frame_get_channels(mFrame);
@@ -1317,10 +1257,6 @@ void SoftFFmpegAudio::drainEOSOutputBuffer() {
     CHECK(outInfo != NULL);
     OMX_BUFFERHEADERTYPE *outHeader = outInfo->mHeader;
 
-    // CHECK_EQ(mResampledDataSize, 0);
-
-    ALOGD("ffmpeg audio decoder fill eos outbuf");
-
     outHeader->nTimeStamp = getAudioClock();
     outHeader->nFilledLen = 0;
     outHeader->nFlags = OMX_BUFFERFLAG_EOS;
@@ -1389,7 +1325,6 @@ void SoftFFmpegAudio::onQueueFilled(OMX_U32 /* portIndex */) {
         inHeader = inInfo->mHeader;
 
         if (inHeader->nFlags & OMX_BUFFERFLAG_EOS) {
-            ALOGD("ffmpeg audio decoder eos");
             mEOSStatus = INPUT_EOS_SEEN;
             continue;
         }

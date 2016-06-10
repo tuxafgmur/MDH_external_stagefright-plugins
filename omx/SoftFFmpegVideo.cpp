@@ -24,7 +24,6 @@
 
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AUtils.h>
-#include <media/stagefright/foundation/hexdump.h>
 #include <media/stagefright/MediaDefs.h>
 
 #define DEBUG_PKT 0
@@ -62,8 +61,6 @@ SoftFFmpegVideo::SoftFFmpegVideo(
       mIgnoreExtradata(false),
       mStride(320),
       mSignalledError(false) {
-
-    ALOGD("SoftFFmpegVideo component: %s codingType=%d appData: %p", name, codingType, appData);
 
     initPorts(
             kNumInputBuffers,
@@ -335,13 +332,6 @@ OMX_ERRORTYPE SoftFFmpegVideo::internalSetParameter(
             mCtx->width    = profile->nWidth;
             mCtx->height   = profile->nHeight;
 
-            ALOGD("got OMX_IndexParamVideoFFmpeg, "
-                "eCodecId:%d(%s), width:%u, height:%u",
-                profile->eCodecId,
-                avcodec_get_name(mCtx->codec_id),
-                profile->nWidth,
-                profile->nHeight);
-
             return OMX_ErrorNone;
         }
     }
@@ -352,13 +342,7 @@ int32_t SoftFFmpegVideo::handleExtradata() {
     BufferInfo *inInfo = *inQueue.begin();
     OMX_BUFFERHEADERTYPE *inHeader = inInfo->mHeader;
 
-    ALOGI("got extradata, ignore: %d, size: %u",
-            mIgnoreExtradata, inHeader->nFilledLen);
-    hexdump(inHeader->pBuffer + inHeader->nOffset, inHeader->nFilledLen);
-
-    if (mIgnoreExtradata) {
-        ALOGI("got extradata, size: %u, but ignore it", inHeader->nFilledLen);
-    } else {
+    if (!mIgnoreExtradata) {
         if (!mExtradataReady) {
             //if (mMode == MODE_H264)
             //it is possible to receive multiple input buffer with OMX_BUFFERFLAG_CODECCONFIG flag.
@@ -393,8 +377,6 @@ int32_t SoftFFmpegVideo::openDecoder() {
     }
 
     if (!mExtradataReady) {
-        ALOGI("extradata is ready, size: %d", mCtx->extradata_size);
-        hexdump(mCtx->extradata, mCtx->extradata_size);
         mExtradataReady = true;
     }
 
@@ -407,18 +389,12 @@ int32_t SoftFFmpegVideo::openDecoder() {
 
     setDefaultCtx(mCtx, mCtx->codec);
 
-    ALOGD("begin to open ffmpeg decoder(%s) now",
-            avcodec_get_name(mCtx->codec_id));
-
     int err = avcodec_open2(mCtx, mCtx->codec, NULL);
     if (err < 0) {
         ALOGE("ffmpeg video decoder failed to initialize. (%s)", av_err2str(err));
         return ERR_DECODER_OPEN_FAILED;
     }
     mCodecAlreadyOpened = true;
-
-    ALOGD("open ffmpeg video decoder(%s) success",
-            avcodec_get_name(mCtx->codec_id));
 
     mFrame = av_frame_alloc();
     if (!mFrame) {
@@ -585,8 +561,6 @@ void SoftFFmpegVideo::drainEOSOutputBuffer() {
     outQueue.erase(outQueue.begin());
     OMX_BUFFERHEADERTYPE *outHeader = outInfo->mHeader;
 
-    ALOGD("ffmpeg video decoder fill eos outbuf");
-
     outHeader->nTimeStamp = 0;
     outHeader->nFilledLen = 0;
     outHeader->nFlags = OMX_BUFFERFLAG_EOS;
@@ -683,7 +657,6 @@ void SoftFFmpegVideo::onQueueFilled(OMX_U32 portIndex __unused) {
         }
 
         if (inHeader->nFlags & OMX_BUFFERFLAG_CODECCONFIG) {
-            ALOGD("ffmpeg got codecconfig buffer");
             if (handleExtradata() != ERR_OK) {
                 notify(OMX_EventError, OMX_ErrorUndefined, 0, NULL);
                 mSignalledError = true;

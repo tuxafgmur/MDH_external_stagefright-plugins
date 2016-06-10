@@ -88,7 +88,6 @@ void nam_av_log_callback(void* ptr, int level, const char* fmt, va_list vl)
         return;
     }
     if (count > 0) {
-        ALOGI("Last message repeated %d times\n", count);
         count = 0;
     }
     strcpy(prev, line);
@@ -123,7 +122,6 @@ void nam_av_log_callback(void* ptr, int level, const char* fmt, va_list vl)
             g_msg_len += 1;
             g_msg[g_msg_len] = '\n';
         }
-        ALOGI("%s", g_msg);
         /* reset g_msg and g_msg_len */
         memset(g_msg, 0, LOG_BUF_SIZE);
         g_msg_len = 0;
@@ -198,7 +196,6 @@ status_t initFFmpeg()
 
     if (property_get("debug.nam.ffmpeg", value, NULL)
         && (!strcmp(value, "1") || !av_strcasecmp(value, "true"))) {
-        ALOGI("set ffmpeg debug level to AV_LOG_DEBUG");
         debug_enabled = true;
     }
     if (debug_enabled)
@@ -266,11 +263,9 @@ static int h264_split(AVCodecContext *avctx __unused,
 
     for(i=0; i<=buf_size; i++){
         if((state&0xFFFFFF1F) == 0x107) {
-            ALOGI("found NAL_SPS");
             has_sps=1;
         }
         if((state&0xFFFFFF1F) == 0x108) {
-            ALOGI("found NAL_PPS");
             has_pps=1;
             if (check_compatible_only)
                 return (has_sps & has_pps);
@@ -331,8 +326,6 @@ int parser_split(AVCodecContext *avctx,
 int is_extradata_compatible_with_android(AVCodecContext *avctx)
 {
     if (avctx->extradata_size <= 0) {
-        ALOGI("extradata_size <= 0, extradata is not compatible with "
-                "android decoder, the codec id: 0x%0x", avctx->codec_id);
         return 0;
     }
 

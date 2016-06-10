@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define LOG_NDEBUG 0
+// #define LOG_NDEBUG 0
 #define LOG_TAG "FFmpegOMXPlugin"
 #include <utils/Log.h>
 
@@ -42,8 +42,6 @@ OMX_ERRORTYPE FFmpegOMXPlugin::makeComponentInstance(
         const OMX_CALLBACKTYPE *callbacks,
         OMX_PTR appData,
         OMX_COMPONENTTYPE **component) {
-
-    ALOGV("makeComponentInstance '%s'", name);
 
     sp<SoftOMXComponent> codec;
 
