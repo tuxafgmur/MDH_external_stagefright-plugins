@@ -121,6 +121,9 @@ FFmpegExtractor::FFmpegExtractor(const sp<DataSource> &source, const sp<AMessage
 
     fetchStuffsFromSniffedMeta(meta);
 
+    packet_queue_init(&mVideoQ);
+    packet_queue_init(&mAudioQ);
+
     int err = initStreams();
     if (err < 0) {
         ALOGE("failed to init ffmpeg");
@@ -983,9 +986,6 @@ int FFmpegExtractor::initStreams()
         hours = mins / 60;
         mins %= 60;
     }
-
-    packet_queue_init(&mVideoQ);
-    packet_queue_init(&mAudioQ);
 
     if (st_index[AVMEDIA_TYPE_AUDIO] >= 0) {
         audio_ret = stream_component_open(st_index[AVMEDIA_TYPE_AUDIO]);
